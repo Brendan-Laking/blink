@@ -31,8 +31,8 @@ typedef enum ScreenState {
 
 int main() {
 
-    char *data = NULL;
-    char *stop_preditctions = NULL;
+    char *routes_raw = NULL;
+    char *stop_preditctions_raw = NULL;
     ScreenState screenstate = STATE_MENU;
     initscr();
     start_color();
@@ -49,17 +49,26 @@ int main() {
 
     char stop_id[5] = {0};
 
-    size_t route_cap = 512;
-    size_t route_length = 0;
+
 
     typedef struct Routes{
         char **routes;
         char **predictions;
+        size_t routes_cap;
+        size_t predictions_cap;
+        size_t routes_length;
+        size_t predictions_length;
     } Routes;
 
-    Routes routes; 
+    Routes routes = {
+        .routes_cap         = 512,
+        .predictions_cap    = 512,
+        .routes             = malloc(sizeof(char *) * routes.routes_cap),
+        .predictions        = malloc(sizeof(char *) * routes.predictions_cap),
+        .routes_length      = 0,
+        .predictions_length = 0
+    };
 
-    routes.routes = malloc(sizeof(char *) * route_cap);
 
     if(routes.routes == NULL) {
         fprintf(stderr, ERRORS_ALLOCATE);
@@ -84,11 +93,14 @@ int main() {
             }
 
             case STATE_ROUTE: {
-                for(size_t i = 0; i < route_length; i++){
+                for(size_t i = 0; i < routes.routes_length; i++) {
                     printw("%s\n", routes.routes[i]);
                 }
-                printw("\n%s", stop_preditctions);
                 break;
+
+                for(size_t i =0; i < routes.predictions_length; i++) {
+                    printw("%s\n", routes.predictions[i]);
+                }
             }
 
             default: {
@@ -114,12 +126,11 @@ int main() {
 
                     case STATE_STOP_ID: {
                         if (strlen(stop_id) >= 4) {
-
-                            data = get_stop_routes(stop_id, api_routes);
-                            stop_preditctions = get_stop_routes(stop_id, api_predict);
+                            routes_raw = get_stop_routes(stop_id, api_routes);
+                            stop_preditctions_raw = get_stop_routes(stop_id, api_predict);
                             cJSON *elem;
                             cJSON *name;
-                            cJSON *root = cJSON_Parse(data);
+                            cJSON *root = cJSON_Parse(routes_raw);
                             int n = cJSON_GetArraySize(root);
                             
                             for (int i = 0; i<n; i++) {
@@ -127,20 +138,47 @@ int main() {
                                 name = cJSON_GetObjectItem(elem, "route_short_name");
 
 
-                                if (route_length >= route_cap) {
-                                    while (route_length >= route_cap) {
-                                        route_cap *= 2;
+                                if (routes.routes_length  >= routes.routes_cap) {
+                                    while (routes.routes_length >= routes.routes_cap) {
+                                        routes.routes_cap *= 2;
                                     }
-                                    routes.routes = realloc(routes.routes, sizeof(char *) * route_cap);
+                                    routes.routes = realloc(routes.routes, sizeof(char *) * routes.routes_cap);
                                     if (routes.routes == NULL) {
                                         fprintf(stderr, ERRORS_ALLOCATE);
                                         exit(1);
                                     }
                                 }
-                                routes.routes[route_length++] = name->valuestring;
+                                routes.routes[routes.routes_length++] = name->valuestring;
                                 
-                                printf("%s : bus\n", name->valuestring);
-                            }
+                            }   
+
+                            root = cJSON_Parse(stop_preditctions_raw);
+                            cJSON *departures = cJSON_GetObjectItem(root, "departures");
+
+                            n = cJSON_GetArraySize(departures);
+                            printf("%d", n);
+
+                            for (int i = 0; i<n; i++) {
+                                cJSON *departure = cJSON_GetArrayItem(departures, i);
+                                cJSON *arrival   = cJSON_GetObjectItem(departure, "arrival");
+                                cJSON *expected  = cJSON_GetObjectItem(arrival, "expected");
+                                
+                                if (routes.predictions_length  >= routes.predictions_cap) {
+                                    while (routes.predictions_length >= routes.predictions_cap) {
+                                        routes.predictions_cap *= 2;
+                                    }
+                                    routes.predictions = realloc(routes.predictions, sizeof(char *) * routes.predictions_cap);
+                                    if (routes.predictions == NULL) {
+                                        fprintf(stderr, ERRORS_ALLOCATE);
+                                        exit(1);
+                                    }
+                                }
+                                routes.predictions[routes.predictions_length++] = expected->valuestring;
+
+                                printf("%s : bus\n", expected->valuestring);
+                            }   
+
+                            exit(0);
                             screenstate = STATE_ROUTE;
                         }
                         break;
@@ -177,9 +215,9 @@ int main() {
 
     endwin();
 
-    free(stop_preditctions);
+    free(stop_preditctions_raw);
     free(routes.routes);
-    free(data);
+    free(routes_raw);
     return 0;
 
 }
